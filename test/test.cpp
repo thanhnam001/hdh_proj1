@@ -115,9 +115,9 @@ wchar_t* convertUTFtoUnicode(string UTF8String)
         *ptr = (wchar_t)stoi(nextbyte, nullptr, 16);
         ptr++;
     }
-    wcout << wbuff << endl;
     return wbuff;
 }
+//hàm đọc sector
 int ReadSector(LPCWSTR  drive, long long readPoint, BYTE* sector, DWORD size)
 {
     int retCode = 0;
@@ -170,6 +170,7 @@ void printByte(BYTE *sector,int size) {
         wcout << endl;
     }
 }
+//hàm chuyển đổi giá trị của dãy byte
 unsigned long long Cal(BYTE* b, int p, int size) {
     unsigned long long t = 0;
     if(b!=nullptr)
@@ -179,6 +180,7 @@ unsigned long long Cal(BYTE* b, int p, int size) {
     }
     return t;
 }
+//đọc thông tin BPB
 BPB ReadBPB(BYTE* vbr ) {
     BPB p;
     p.BytePerSector = Cal(vbr, 0xb, 2);
@@ -196,6 +198,7 @@ BPB ReadBPB(BYTE* vbr ) {
     p.VolumeSerialNumber = Cal(vbr, 0x48, 8);
     return p;
 }
+//đọc thông tin header của mft
 MFTHeader ReadMFTHeader(BYTE* mft) {
     MFTHeader m;
     m.Signature = Cal(mft, 0x0, 4);
@@ -212,6 +215,7 @@ MFTHeader ReadMFTHeader(BYTE* mft) {
     m.NextAttr = Cal(mft, 0x28, 2);
     return m;
 }
+//Đọc thông tin header của attribute 
 AttrHeader ReadAttrHeader(BYTE* mft) {
     AttrHeader ah;
     ah.TypeID = Cal(mft, 0x0, 4);
@@ -223,6 +227,7 @@ AttrHeader ReadAttrHeader(BYTE* mft) {
     ah.AttrIdentifier = Cal(mft, 0x14, 2);
     return ah;
 }
+//Đọc thông tin attribute standard information
 StandardInformation ReadStandardInformation(BYTE* sector) {
     StandardInformation si;
     si.ah = ReadAttrHeader(sector);
@@ -243,6 +248,7 @@ StandardInformation ReadStandardInformation(BYTE* sector) {
     si.sic.USN = Cal(sector, temp + 64, 8);
     return si;
 }
+//Đọc thông tin attribute filename
 FileName ReadFileName(BYTE* sector) {
     FileName fn;
     fn.ah = ReadAttrHeader(sector);
@@ -269,6 +275,7 @@ FileName ReadFileName(BYTE* sector) {
     getline(ws,fn.fic.FileName);
     return fn;
 }
+//Đọc thông tin attribute Data
 Data ReadData(BYTE* sector) {
     Data d;
     d.ah = ReadAttrHeader(sector);
@@ -277,13 +284,13 @@ Data ReadData(BYTE* sector) {
     string s;
     stringstream ss;
     for (int i = 0; i < d.size; i++) {
-        wcout <<hex<< setfill(L'0') << setw(2) << int(sector[i + d.StartingOffset]);
         ss << hex << setfill('0') << setw(2) << int(sector[i + d.StartingOffset]);
     }
     getline(ss, s);
     d.content = wstring(convertUTFtoUnicode(s));
     return d;
 }
+//Đọc thông tin trong MFT entry
 MFT FileInfo(BYTE* mftEntry) {
     MFT mft;
     mft.mh = ReadMFTHeader(mftEntry);
@@ -306,6 +313,7 @@ int main(int argc, char** argv)
 {
     _setmode(_fileno(stdout), _O_WTEXT); //needed for output
     _setmode(_fileno(stdin), _O_WTEXT); //needed for input
+    std::ios_base::fmtflags f(wcout.flags());
     BYTE *VBRsector;
     BYTE *MFTsector;
     int VBRsize = 512;
@@ -313,49 +321,47 @@ int main(int argc, char** argv)
     VBRsector = new BYTE[VBRsize];
     MFTsector = new BYTE[MFTsize];
     BPB bpb;
+    //Đọc VBR
     ReadSector(L"\\\\.\\F:", 0, VBRsector, VBRsize); 
-
-    std::ios_base::fmtflags f(wcout.flags());
-
+    //Lấy thông tin trong Bios Parameter Block
     bpb = ReadBPB(VBRsector);
-    /*cout << bpb.BytePerSector<<endl;
-    cout << bpb.SectorPerCluster<<endl;
-    cout << bpb.ReversedSector << endl;
-    cout << bpb.MediaDescriptor << endl;
-    cout << bpb.SectorPerTrack << endl;
-    cout << bpb.NumberOfHeads << endl;
-    cout << bpb.StartingSector << endl;
-    cout << bpb.TotalSector << endl;
-    cout << bpb.StartingClusterOfMFT << endl;
-    cout << bpb.StartingClusterOfMFTMirr << endl;
-    cout << bpb.ClusterPerMFT << endl;
-    cout << bpb.ClusterPerIndexBuffer << endl;
-    cout << bpb.VolumeSerialNumber << endl;*/
-
-    //cout.flags(f);
-
+    wcout << L"Byte per sector "<<bpb.BytePerSector << endl;
+    wcout << L"Sector per cluster "<<bpb.SectorPerCluster << endl;
+    wcout << L"Reserved sector "<<bpb.ReversedSector << endl;
+    wcout << L"Media discriptor "<<bpb.MediaDescriptor << endl;
+    wcout << L"Sector per track "<<bpb.SectorPerTrack << endl;
+    wcout << L"Number of heads "<<bpb.NumberOfHeads << endl;
+    wcout << L"Starting sector "<<bpb.StartingSector << endl;
+    wcout << L"Total sector "<<bpb.TotalSector << endl;
+    wcout << L"Starting cluter of MFT "<<bpb.StartingClusterOfMFT << endl;
+    wcout << L"Starting cluster of MFT Mirr "<<bpb.StartingClusterOfMFTMirr << endl;
+    wcout << L"Cluster per MFT "<<bpb.ClusterPerMFT << endl;
+    wcout << L"Cluster per index buffer "<<bpb.ClusterPerIndexBuffer << endl;
+    wcout << L"Volumn serial number "<<bpb.VolumeSerialNumber << endl;
+    //Lấy các MFT
     vector<MFT> mft;
     mft.resize(50);
     unsigned long long start = bpb.StartingClusterOfMFT * bpb.SectorPerCluster * bpb.BytePerSector;
-    //for (int i =0; i < 50; i++) {
-    //    ReadSector(L"\\\\.\\F:", start+i*1024, MFTsector, MFTsize);
-    //    if (MFTsector[0] == 0x46 && MFTsector[1] == 0x49 && MFTsector[2] == 0x4c && MFTsector[3] == 0x45) {
-    //        mft[i]=FileInfo(MFTsector);
-    //        mft[i].StartingOffset = start / 1024 + i;
-    //    }
-    //}
-    //for (int i = 0; i < mft.size(); i++) {
-    //    if (mft[i].mh.BaseMFTRecord == 0 && mft[i].fn.fic.FileName != L"") {
-    //        wcout << L"|---" << mft[i].fn.fic.FileName << '-' << mft[i].mh.BaseMFTRecord << '-' << mft[i].StartingOffset << endl;
-    //        //wcout <<L'\t'<< mft[i].fn.
-    //    }
-    //}
-    ReadSector(L"\\\\.\\F:", long long(3145768) * 1024, MFTsector, MFTsize);
-    printByte(MFTsector, MFTsize);
+    for (int i =0; i < 50; i++) {
+        ReadSector(L"\\\\.\\F:", start+i*1024, MFTsector, MFTsize);
+        if (MFTsector[0] == 0x46 && MFTsector[1] == 0x49 && MFTsector[2] == 0x4c && MFTsector[3] == 0x45) {
+            mft[i]=FileInfo(MFTsector);
+            mft[i].StartingOffset = start / 1024 + i;
+        }
+    }
+    //In cây thư mục và thông tin
+    for (int i = 0; i < mft.size(); i++) {
+        if (mft[i].mh.BaseMFTRecord == 0 && mft[i].fn.fic.FileName != L"") {
+            wcout << L"|---" << mft[i].fn.fic.FileName << endl;
+            //wcout <<L'\t'<< mft[i].fn.
+        }
+    }
+    //ReadSector(L"\\\\.\\F:", long long(3145768) * 1024, MFTsector, MFTsize);
+    //printByte(MFTsector, MFTsize);
     //wcout.flags(f);
     
-    MFT temp = FileInfo(MFTsector);
-    wcout << endl<<temp.data.content;
+    //MFT temp = FileInfo(MFTsector);
+    //wcout << endl<<temp.data.content;
     delete[] VBRsector;
     delete[] MFTsector;
     return 0;
