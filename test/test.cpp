@@ -488,18 +488,17 @@ wstring CheckSIflag(unsigned long long f) {
 }
 
 //Hàm để xuất thông tin file.txt
-vector<BYTE> readNonResident(long long start, BYTE*& content, DWORD size)
+vector<BYTE> readNonResident(long long start, BYTE*& content, DWORD size, LPCWSTR partition)
 {
 	vector<BYTE> Fcontent;
 	unsigned long long readmost = size / 512;
 	unsigned long long leftover = size % 512;
-	content = new BYTE[size];
-	ReadSector(L"\\\\.\\F:", start * 4096, content, readmost * 512);
+	ReadSector(partition, start * 4096, content, readmost * 512);
 	for (int j = 0; j < readmost * 512; j++)
 	{
 		Fcontent.insert(Fcontent.end(), content[j]);
 	}
-	ReadSector(L"\\\\.\\F:", start * 4096 + readmost * 512, content, 512);
+	ReadSector(partition, start * 4096 + readmost * 512, content, leftover);
 	for (int j = 0; j < leftover; j++)
 	{
 		Fcontent.insert(Fcontent.end(), content[j]);
@@ -528,30 +527,31 @@ void displayVBR(BPB& bpb, BYTE* VBRsector, int VBRsize)
 }
 
 //Hàm để xuất thông tin các MFT là file trong folder
-void displayMFTSubTree(const wchar_t* tab, const wchar_t* dash, vector<MFT> mft, BYTE* MFTsector, int MFTsize, int cur, int cont, int* sub)
+void displayMFTSubTree(const wchar_t* tab, const wchar_t* dash, vector<MFT> mft, BYTE* MFTsector, int MFTsize, int& cur, int cont, int* sub)
 {
 	wchar_t* temp = _wcsdup(tab);
 	const wchar_t* tab2;
 	tab2 = wcscat(temp, L"\t");
-	wchar_t* temp2 = _wcsdup(dash);
+	temp = _wcsdup(dash);
 	const wchar_t* dash2;
-	dash2 = wcscat(temp2, L"---");
-	if (mft[cur + cont].mh.BaseMFTRecord == 0 && mft[cur + cont].fn.fic.FileName != L"") {
-		if (mft[cur + cont].mh.Flag == 03)
+	dash2 = wcscat(temp, L"---");
+	int i = cur + cont;
+	if (mft[i].mh.BaseMFTRecord == 0 && mft[i].fn.fic.FileName != L"") {
+		if (mft[i].mh.Flag == 03)
 		{
-			wcout << dash2 << "Folder name: " << mft[cur + cont].fn.fic.FileName << "\tSector: " << mft[cur + cont].StartingOffset << endl;
-			wcout << tab2 << "Created time: " << ConvertTime(mft[cur + cont].si.sic.FileCreation) << L'\t' << "Modified time: " << ConvertTime(mft[cur + cont].si.sic.FileAltered) << L'\n';
-			wcout << tab2 << "MFT modified time : " << ConvertTime(mft[cur + cont].si.sic.MFTChanged) << L'\t' << "Accessed time: " << ConvertTime(mft[cur + cont].si.sic.FileRead) << L'\n';
-			wcout << tab2 << "Flags: " << CheckSIflag(mft[cur + cont].si.sic.FilePermission) << L'\t' << "Maximum number of version: " << mft[cur + cont].si.sic.MaximumNumberOfVersion << "\n";
-			wcout << tab2 << "Version number: " << mft[cur + cont].si.sic.VersionNumber << '\t' << "Class ID: " << mft[cur + cont].si.sic.ClassId << '\t' << "Owner ID: " << mft[cur + cont].si.sic.OwnerId << "\n";
-			wcout << tab2 << "Security ID: " << mft[cur + cont].si.sic.SecurityId << '\n';
-			wcout << tab2 << "Number of sub folder or file: " << sub[cur + cont] << "\n";
-			wcout << tab2 << "The following " << sub[cur + cont] << " files / folders are " << mft[cur + cont].fn.fic.FileName << " subfolder :" << "\n";
-			for (int j = 1; j < sub[cur + cont] + 1; j++)
+			wcout << dash2 << "Folder name: " << mft[i].fn.fic.FileName << "\tSector: " << mft[i].StartingOffset << endl;
+			wcout << tab2 << "Created time: " << ConvertTime(mft[i].si.sic.FileCreation) << L'\t' << "Modified time: " << ConvertTime(mft[i].si.sic.FileAltered) << L'\n';
+			wcout << tab2 << "MFT modified time : " << ConvertTime(mft[i].si.sic.MFTChanged) << L'\t' << "Accessed time: " << ConvertTime(mft[i].si.sic.FileRead) << L'\n';
+			wcout << tab2 << "Flags: " << CheckSIflag(mft[i].si.sic.FilePermission) << L'\t' << "Maximum number of version: " << mft[i].si.sic.MaximumNumberOfVersion << "\n";
+			wcout << tab2 << "Version number: " << mft[i].si.sic.VersionNumber << '\t' << "Class ID: " << mft[i].si.sic.ClassId << '\t' << "Owner ID: " << mft[i].si.sic.OwnerId << "\n";
+			wcout << tab2 << "Security ID: " << mft[i].si.sic.SecurityId << '\n';
+			wcout << tab2 << "Number of sub folder or file: " << sub[i] << "\n";
+			wcout << tab2 << "The following " << sub[i] << " files / folders are " << mft[i].fn.fic.FileName << " subfolder :" << "\n";
+			for (int j = 1; j < sub[i] + 1; j++)
 			{
-				displayMFTSubTree(tab2, dash2, mft, MFTsector, MFTsize, cur + cont, j, sub);
+				displayMFTSubTree(tab2, dash2, mft, MFTsector, MFTsize, i, j, sub);
 			}
-			cur += sub[cur + cont];
+			cur += sub[i];
 		}
 		else
 		{
@@ -572,8 +572,6 @@ void displayMFTSubTree(const wchar_t* tab, const wchar_t* dash, vector<MFT> mft,
 
 		}
 	}
-
-
 }
 
 //Hàm để xuất thông tin các MFT là folder và file trong thư mục gốc
@@ -600,7 +598,7 @@ void displayMFT(vector<MFT> mft, BPB bpb, BYTE* MFTsector, int MFTsize, int* sub
 				}
 				i += sub[i];
 			}
-			else
+			else if (mft[i].mh.Flag == 03)
 			{
 				wcout << L"|---" << "File name: " << mft[i].fn.fic.FileName << "\tSector: " << mft[i].StartingOffset << endl;
 				wcout << L"|\t" << "Created time: " << ConvertTime(mft[i].si.sic.FileCreation) << L'\t' << "Modified time: " << ConvertTime(mft[i].si.sic.FileAltered) << L'\n';
@@ -622,8 +620,9 @@ void displayMFT(vector<MFT> mft, BPB bpb, BYTE* MFTsector, int MFTsize, int* sub
 }
 
 //Hàm để xuất thông tin file.txt
-void displayTXT(vector<MFT> mft)
+void displayTXT(vector<MFT> mft, LPCWSTR partition)
 {
+	wcin.ignore();
 	wcout << L"\n\nNhập tên file txt cần mở: ";
 	wstring txtfile;
 	BYTE* content;
@@ -636,8 +635,11 @@ void displayTXT(vector<MFT> mft)
 				wcout << utf8_to_utf16(ConvertByteToString(mft[i].data.content));
 			else
 			{
-				Fcontent = readNonResident(mft[i].data.start, content, mft[i].data.size);
+				content = new BYTE[mft[i].data.size];
+				Fcontent = readNonResident(mft[i].data.start, content, mft[i].data.size, partition);
 				wcout << utf8_to_utf16(ConvertByteToString(Fcontent));
+				delete[] content;
+				Fcontent.clear();
 			}
 	}
 }
@@ -657,8 +659,15 @@ int main(int argc, char** argv)
 	MFTsector = new BYTE[MFTsize];
 	BPB bpb;
 	vector<MFT> mft;
+	wstring drive;
+	wcout << L"Nhập tên ổ đĩa muốn đọc:";
+	wcin >> drive;
+	drive.append(L":");
+	wstring TDrive = L"\\\\.\\";
+	TDrive.append(drive);
+	LPCWSTR partition = TDrive.c_str();
 	//Đọc VBR
-	ReadSector(L"\\\\.\\F:", 0, VBRsector, VBRsize);
+	ReadSector(partition, 0, VBRsector, VBRsize);
 	//Lấy thông tin trong Bios Parameter Block
 	bpb = ReadBPB(VBRsector);
 	displayVBR(bpb, VBRsector, VBRsize);
@@ -667,7 +676,7 @@ int main(int argc, char** argv)
 	mft.resize(50);
 	unsigned long long start = bpb.StartingClusterOfMFT * bpb.SectorPerCluster * bpb.BytePerSector;
 	for (int i = 0; i < 50; i++) {
-		ReadSector(L"\\\\.\\F:", start + long long(i * bpb.SizePerMFT), MFTsector, bpb.SizePerMFT);
+		ReadSector(partition, start + long long(i * bpb.SizePerMFT), MFTsector, bpb.SizePerMFT);
 		if (MFTsector[0] == 0x46 && MFTsector[1] == 0x49 && MFTsector[2] == 0x4c && MFTsector[3] == 0x45) {
 			mft[i] = FileInfo(MFTsector);
 			mft[i].StartingOffset = start / bpb.SizePerMFT + i;
@@ -675,8 +684,10 @@ int main(int argc, char** argv)
 		}
 	}
 	displayMFT(mft, bpb, MFTsector, MFTsize, sub);
-	displayTXT(mft);
+	displayTXT(mft, partition);
 	delete[] VBRsector;
 	delete[] MFTsector;
+	mft.clear();
+
 	return 0;
 }
