@@ -498,7 +498,7 @@ vector<BYTE> readNonResident(long long start, BYTE*& content, DWORD size, LPCWST
 	{
 		Fcontent.insert(Fcontent.end(), content[j]);
 	}
-	ReadSector(partition, start * 4096 + readmost * 512, content, leftover);
+	ReadSector(partition, start * 4096 + readmost * 512, content, 512);
 	for (int j = 0; j < leftover; j++)
 	{
 		Fcontent.insert(Fcontent.end(), content[j]);
@@ -598,7 +598,7 @@ void displayMFT(vector<MFT> mft, BPB bpb, BYTE* MFTsector, int MFTsize, int* sub
 				}
 				i += sub[i];
 			}
-			else if (mft[i].mh.Flag == 03)
+			else if (mft[i].mh.Flag == 01)
 			{
 				wcout << L"|---" << "File name: " << mft[i].fn.fic.FileName << "\tSector: " << mft[i].StartingOffset << endl;
 				wcout << L"|\t" << "Created time: " << ConvertTime(mft[i].si.sic.FileCreation) << L'\t' << "Modified time: " << ConvertTime(mft[i].si.sic.FileAltered) << L'\n';
@@ -671,11 +671,11 @@ int main(int argc, char** argv)
 	//Lấy thông tin trong Bios Parameter Block
 	bpb = ReadBPB(VBRsector);
 	displayVBR(bpb, VBRsector, VBRsize);
-	//Lấy các MFT, ở đây giả sử lấy 50 page đầu tiên do chưa tìm dc cách lấy số file trong thư mục gốc
-	int sub[50];
-	mft.resize(50);
+	//Lấy các MFT, ở đây giả sử lấy 70 page đầu tiên do chưa tìm dc cách lấy số file trong thư mục gốc
+	int sub[70];
+	mft.resize(70);
 	unsigned long long start = bpb.StartingClusterOfMFT * bpb.SectorPerCluster * bpb.BytePerSector;
-	for (int i = 0; i < 50; i++) {
+	for (int i = 0; i < 70; i++) {
 		ReadSector(partition, start + long long(i * bpb.SizePerMFT), MFTsector, bpb.SizePerMFT);
 		if (MFTsector[0] == 0x46 && MFTsector[1] == 0x49 && MFTsector[2] == 0x4c && MFTsector[3] == 0x45) {
 			mft[i] = FileInfo(MFTsector);
