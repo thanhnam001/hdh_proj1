@@ -100,6 +100,14 @@ struct Data {
 	unsigned int clusterChain;
 	unsigned int continuous;
 	unsigned int start;
+
+};
+
+struct Sub {
+	int numbersub = 0;
+	unsigned long long subFNlength;
+	unsigned long long subFNS;
+	vector<wstring> subFN;
 };
 struct MFT {
 	unsigned long long StartingOffset;
@@ -107,6 +115,7 @@ struct MFT {
 	StandardInformation si;
 	FileName fn;
 	Data data;
+	Sub subfolders;
 };
 
 
@@ -393,27 +402,41 @@ Data ReadData(BYTE* sector) {
 }
 
 //Biến toàn cục để tính số lượng file/folder con	
-int numberSub = 0;
 
 //Hàm đọc folder từ header 0x90 nếu có giá trị 0x20 mà sau đó không trống thì có 1 file 
-// con tương tự cho 0x10000000 đối với folder con
-void readNumberFolder(BYTE* sector)
+// con tương tự cho 0x10000000 đối với folder con và lưu lại tên file con để dò lại khi xuất cây
+Sub ReadSubFolders(BYTE* sector)
 {
+	Sub sub;
 	int i = 1;
-	unsigned long long sub;
-	sub = Cal(sector, 0, 8);
+	unsigned long long count;
+	count = Cal(sector, 0, 8);
 	unsigned long long temp;
-	while (sub != 0xffffffff)
+	while (count != 0xffffffff)
 	{
-		sub = Cal(sector, i * 8, 8);
-		if (sub == 0x20 || sub == 0x10000000)
+		count = Cal(sector, i * 8, 8);
+		if (count == 0x20 || count == 0x10000000)
 		{
-			temp = Cal(sector, i * 8 + 8, 4);
-			if (temp != 0x00)
-				numberSub++;
+			sub.subFNlength = Cal(sector, i * 8 + 8, 1);
+			if (sub.subFNlength != 0x00)
+			{
+				sub.numbersub++;
+				sub.subFNS = Cal(sector, i * 8 + 9, 1);
+				wstring temp;
+				temp.resize(sub.subFNlength);
+				wstringstream ws;
+				for (int j = 0; j < sub.subFNlength * 2; j += 2) {
+					int t = (sector[i * 8 + 10 + j] | sector[i * 8 + 11 + j] << 8);
+					ws << wchar_t(t);
+				}
+				getline(ws, temp);
+				sub.subFN.push_back(temp);
+				temp.clear();
+			}
 		}
 		i++;
 	}
+	return sub;
 }
 
 
@@ -447,8 +470,7 @@ MFT FileInfo(BYTE* mftEntry) {
 				mft.fn = ReadFileName(mftEntry + pointer);//file name
 			}
 			else if (temp.TypeID == 0x90) {
-				numberSub = 0;
-				readNumberFolder(mftEntry + pointer);
+				mft.subfolders = ReadSubFolders(mftEntry + pointer);
 			}
 			pointer += temp.AttrLength;
 			temp = ReadAttrHeader(mftEntry + pointer);
@@ -527,7 +549,7 @@ void displayVBR(BPB& bpb, BYTE* VBRsector, int VBRsize)
 }
 
 //Hàm để xuất thông tin các MFT là file trong folder
-void displayMFTSubTree(const wchar_t* tab, const wchar_t* dash, vector<MFT> mft, BYTE* MFTsector, int MFTsize, int& cur, int cont, int* sub)
+void displayMFTSubTree(const wchar_t* tab, const wchar_t* dash, vector<MFT> mft, BYTE* MFTsector, int MFTsize, int cur, vector<wstring> filenames, bool*& sub)
 {
 	wchar_t* temp = _wcsdup(tab);
 	const wchar_t* tab2;
@@ -535,53 +557,58 @@ void displayMFTSubTree(const wchar_t* tab, const wchar_t* dash, vector<MFT> mft,
 	temp = _wcsdup(dash);
 	const wchar_t* dash2;
 	dash2 = wcscat(temp, L"---");
-	int i = cur + cont;
-	if (mft[i].mh.BaseMFTRecord == 0 && mft[i].fn.fic.FileName != L"") {
-		if (mft[i].mh.Flag == 03)
+	for (int i = 0; i < filenames.size(); i++)
+	{
+		for (int j = cur + 1; j < mft.size(); j++)
 		{
-			wcout << dash2 << "Folder name: " << mft[i].fn.fic.FileName << "\tSector: " << mft[i].StartingOffset << endl;
-			wcout << tab2 << "Created time: " << ConvertTime(mft[i].si.sic.FileCreation) << L'\t' << "Modified time: " << ConvertTime(mft[i].si.sic.FileAltered) << L'\n';
-			wcout << tab2 << "MFT modified time : " << ConvertTime(mft[i].si.sic.MFTChanged) << L'\t' << "Accessed time: " << ConvertTime(mft[i].si.sic.FileRead) << L'\n';
-			wcout << tab2 << "Flags: " << CheckSIflag(mft[i].si.sic.FilePermission) << L'\t' << "Maximum number of version: " << mft[i].si.sic.MaximumNumberOfVersion << "\n";
-			wcout << tab2 << "Version number: " << mft[i].si.sic.VersionNumber << '\t' << "Class ID: " << mft[i].si.sic.ClassId << '\t' << "Owner ID: " << mft[i].si.sic.OwnerId << "\n";
-			wcout << tab2 << "Security ID: " << mft[i].si.sic.SecurityId << '\n';
-			wcout << tab2 << "Number of sub folder or file: " << sub[i] << "\n";
-			wcout << tab2 << "The following " << sub[i] << " files / folders are " << mft[i].fn.fic.FileName << " subfolder :" << "\n";
-			for (int j = 1; j < sub[i] + 1; j++)
-			{
-				displayMFTSubTree(tab2, dash2, mft, MFTsector, MFTsize, i, j, sub);
-			}
-			cur += sub[i];
-		}
-		else
-		{
-			wcout << dash2 << "File name: " << mft[cur + cont].fn.fic.FileName << "\tSector: " << mft[cur + cont].StartingOffset << endl;
-			wcout << tab2 << "Created time: " << ConvertTime(mft[cur + cont].si.sic.FileCreation) << L'\t' << "Modified time: " << ConvertTime(mft[cur + cont].si.sic.FileAltered) << L'\n';
-			wcout << tab2 << "MFT modified time : " << ConvertTime(mft[cur + cont].si.sic.MFTChanged) << L'\t' << "Accessed time: " << ConvertTime(mft[cur + cont].si.sic.FileRead) << L'\n';
-			wcout << tab2 << "Flags: " << CheckSIflag(mft[cur + cont].si.sic.FilePermission) << L'\t' << "Maximum number of version: " << mft[cur + cont].si.sic.MaximumNumberOfVersion << "\n";
-			wcout << tab2 << "Version number: " << mft[cur + cont].si.sic.VersionNumber << '\t' << "Class ID: " << mft[cur + cont].si.sic.ClassId << '\t' << "Owner ID: " << mft[cur + cont].si.sic.OwnerId << "\n";
-			wcout << tab2 << "Security ID: " << mft[cur + cont].si.sic.SecurityId << '\n';
-			wcout << tab2 << "Size: " << mft[cur + cont].data.size << '\n';
-			if (mft[cur + cont].data.ah.NonResidentFlag == 0) {
-				wcout << tab2 << "Resident File" << "\n";
-			}
-			else {
-				wcout << tab2 << "NonResident File" << "\n";
-				wcout << tab2 << "Starting cluster: " << mft[cur + cont].data.start << "\n";
-			}
+			if (mft[j].mh.BaseMFTRecord == 0 && mft[j].fn.fic.FileName != L"") {
+				if (mft[j].mh.Flag == 03 && mft[j].fn.fic.FileName == filenames[i])
+				{
+					sub[j] = true;
+					wcout << dash2 << "Folder name: " << mft[j].fn.fic.FileName << "\tSector: " << mft[j].StartingOffset << endl;
+					wcout << tab2 << "Created time: " << ConvertTime(mft[j].si.sic.FileCreation) << L'\t' << "Modified time: " << ConvertTime(mft[j].si.sic.FileAltered) << L'\n';
+					wcout << tab2 << "MFT modified time : " << ConvertTime(mft[j].si.sic.MFTChanged) << L'\t' << "Accessed time: " << ConvertTime(mft[j].si.sic.FileRead) << L'\n';
+					wcout << tab2 << "Flags: " << CheckSIflag(mft[j].si.sic.FilePermission) << L'\t' << "Maximum number of version: " << mft[j].si.sic.MaximumNumberOfVersion << "\n";
+					wcout << tab2 << "Version number: " << mft[j].si.sic.VersionNumber << '\t' << "Class ID: " << mft[j].si.sic.ClassId << '\t' << "Owner ID: " << mft[j].si.sic.OwnerId << "\n";
+					wcout << tab2 << "Security ID: " << mft[j].si.sic.SecurityId << '\n';
+					wcout << tab2 << "Number of sub folder or file: " << mft[j].subfolders.numbersub << "\n";
+					wcout << tab2 << "The following " << mft[j].subfolders.numbersub << " files / folders are " << mft[j].fn.fic.FileName << " subfolder :" << "\n";
+					displayMFTSubTree(tab2, dash2, mft, MFTsector, MFTsize, j, mft[j].subfolders.subFN, sub);
 
+				}
+				else if (mft[j].mh.Flag == 01 && mft[j].fn.fic.FileName == filenames[i])
+				{
+					sub[j] = true;
+					wcout << dash2 << "File name: " << mft[j].fn.fic.FileName << "\tSector: " << mft[j].StartingOffset << endl;
+					wcout << tab2 << "Created time: " << ConvertTime(mft[j].si.sic.FileCreation) << L'\t' << "Modified time: " << ConvertTime(mft[j].si.sic.FileAltered) << L'\n';
+					wcout << tab2 << "MFT modified time : " << ConvertTime(mft[j].si.sic.MFTChanged) << L'\t' << "Accessed time: " << ConvertTime(mft[j].si.sic.FileRead) << L'\n';
+					wcout << tab2 << "Flags: " << CheckSIflag(mft[j].si.sic.FilePermission) << L'\t' << "Maximum number of version: " << mft[j].si.sic.MaximumNumberOfVersion << "\n";
+					wcout << tab2 << "Version number: " << mft[j].si.sic.VersionNumber << '\t' << "Class ID: " << mft[j].si.sic.ClassId << '\t' << "Owner ID: " << mft[j].si.sic.OwnerId << "\n";
+					wcout << tab2 << "Security ID: " << mft[j].si.sic.SecurityId << '\n';
+					wcout << tab2 << "Size: " << mft[j].data.size << '\n';
+					if (mft[j].data.ah.NonResidentFlag == 0) {
+						wcout << tab2 << "Resident File" << "\n";
+					}
+					else {
+						wcout << tab2 << "NonResident File" << "\n";
+						wcout << tab2 << "Starting cluster: " << mft[j].data.start << "\n";
+					}
+
+				}
+			}
 		}
 	}
+
 }
 
-//Hàm để xuất thông tin các MFT là folder và file trong thư mục gốc
-void displayMFT(vector<MFT> mft, BPB bpb, BYTE* MFTsector, int MFTsize, int* sub)
+//Hàm in cây thư mục gốc
+void displayRoot(vector<MFT> mft, BPB bpb, BYTE* MFTsector, int MFTsize, bool*& sub)
 {
 	wcout << L"\n\n";
 	//In cây thư mục và thông tin
 	wcout << L"root\n";
 	for (int i = 0; i < mft.size(); i++) {
-		if (mft[i].mh.BaseMFTRecord == 0 && mft[i].fn.fic.FileName != L"") {
+		if (mft[i].mh.BaseMFTRecord == 0 && mft[i].fn.fic.FileName != L"" && sub[i] != true) {
 			if (mft[i].mh.Flag == 03)
 			{
 				wcout << L"|---" << "Folder name: " << mft[i].fn.fic.FileName << "\tSector: " << mft[i].StartingOffset << endl;
@@ -590,13 +617,9 @@ void displayMFT(vector<MFT> mft, BPB bpb, BYTE* MFTsector, int MFTsize, int* sub
 				wcout << L"|\t" << "Flags: " << CheckSIflag(mft[i].si.sic.FilePermission) << L'\t' << "Maximum number of version: " << mft[i].si.sic.MaximumNumberOfVersion << "\n";
 				wcout << L"|\t" << "Version number: " << mft[i].si.sic.VersionNumber << '\t' << "Class ID: " << mft[i].si.sic.ClassId << '\t' << "Owner ID: " << mft[i].si.sic.OwnerId << "\n";
 				wcout << L"|\t" << "Security ID: " << mft[i].si.sic.SecurityId << '\n';
-				wcout << L"|\t" << "Number of sub folder or file: " << sub[i] << "\n";
-				wcout << L"|\t" << "The following " << sub[i] << " files / folders are " << mft[i].fn.fic.FileName << "'s subfolder :" << "\n";
-				for (int j = 1; j < sub[i] + 1; j++)
-				{
-					displayMFTSubTree(L"|\t", L"|---", mft, MFTsector, MFTsize, i, j, sub);
-				}
-				i += sub[i];
+				wcout << L"|\t" << "Number of sub folder or file: " << mft[i].subfolders.numbersub << "\n";
+				wcout << L"|\t" << "The following " << mft[i].subfolders.numbersub << " files / folders are " << mft[i].fn.fic.FileName << "'s subfolder :" << "\n";
+				displayMFTSubTree(L"|\t", L"|---", mft, MFTsector, MFTsize, i, mft[i].subfolders.subFN, sub);
 			}
 			else if (mft[i].mh.Flag == 01)
 			{
@@ -628,6 +651,7 @@ void displayTXT(vector<MFT> mft, LPCWSTR partition)
 	BYTE* content;
 	vector<BYTE> Fcontent;
 	getline(wcin, txtfile);
+	txtfile.append(L".txt");
 	wcout << L"Nội dung file:\n";
 	for (int i = 0; i < mft.size(); i++) {
 		if (txtfile == mft[i].fn.fic.FileName)
@@ -671,23 +695,27 @@ int main(int argc, char** argv)
 	//Lấy thông tin trong Bios Parameter Block
 	bpb = ReadBPB(VBRsector);
 	displayVBR(bpb, VBRsector, VBRsize);
-	//Lấy các MFT, ở đây giả sử lấy 70 page đầu tiên do chưa tìm dc cách lấy số file trong thư mục gốc
-	int sub[70];
-	mft.resize(70);
+	//Lấy các MFT, ở đây giả sử lấy 50 page đầu tiên do chưa tìm dc cách lấy số file trong thư mục gốc
+	mft.resize(50);
 	unsigned long long start = bpb.StartingClusterOfMFT * bpb.SectorPerCluster * bpb.BytePerSector;
-	for (int i = 0; i < 70; i++) {
+	for (int i = 0; i < 50; i++) {
 		ReadSector(partition, start + long long(i * bpb.SizePerMFT), MFTsector, bpb.SizePerMFT);
 		if (MFTsector[0] == 0x46 && MFTsector[1] == 0x49 && MFTsector[2] == 0x4c && MFTsector[3] == 0x45) {
 			mft[i] = FileInfo(MFTsector);
 			mft[i].StartingOffset = start / bpb.SizePerMFT + i;
-			sub[i] = numberSub;
 		}
 	}
-	displayMFT(mft, bpb, MFTsector, MFTsize, sub);
+	//Khởi tạo mảng sub để lưu lại 1 file có phải là tập tin con hay không,do lấy 70 page đầu nên cũng khởi tạo 70 giá trị
+	bool* sub = new bool[50];
+	for (int i = 0; i < 50; i++)
+	{
+		sub[i] = false;
+	}
+	displayRoot(mft, bpb, MFTsector, MFTsize, sub);
 	displayTXT(mft, partition);
 	delete[] VBRsector;
 	delete[] MFTsector;
+	delete[] sub;
 	mft.clear();
-
 	return 0;
 }
